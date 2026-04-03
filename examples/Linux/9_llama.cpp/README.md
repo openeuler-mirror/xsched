@@ -30,7 +30,8 @@ wget https://huggingface.co/unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF/resolve/main/
 First, build XSched.
 
 ```bash
-cd /xsched
+export XSCHED_HOME=/path/to/xsched
+cd $XSCHED_HOME
 make cuda
 ```
 
@@ -41,22 +42,41 @@ cd /
 git clone [git@github.com:XpuOS/llama.cpp.git](https://github.com/XpuOS/llama.cpp.git)
 cd llama.cpp
 git checkout -b xsched origin/xsched
-cmake -B build -DGGML_CUDA=on -DCMAKE_PREFIX_PATH=/xsched/output/lib
+
+cmake -B build \
+    -DGGML_CUDA=on \
+    -DCMAKE_PREFIX_PATH=$XSCHED_HOME/output \
+    -DCMAKE_CUDA_ARCHITECTURES="" \ # Set GPU architecture (70,75,80,86,90...) 
+    -DGGML_CUDA_NO_VMM=ON \
+    -DLLAMA_CURL=OFF \
+    -DGGML_CUDA_GRAPHS=OFF \
+    -DCMAKE_CUDA_COMPILER=/path/to/nvcc
+    -DCMAKE_EXE_LINKER_FLAGS="-Wl,--allow-shlib-undefined -L$XSCHED_HOME/output/lib"
 cmake --build build -- -j$(nproc)
 ```
 
 Now, start the server.
 
 ```bash
+export LD_LIBRARY_PATH=$XSCHED_HOME/output/lib:$LD_LIBRARY_PATH
+export XSCHED_POLICY=    # Set XSched scheduling policy (e.g., HPF, HHPF, UP, etc.)
+export XSCHED_CUDA_LV3_IMPL=TSG # For Nvidia A series GPU
+export GGML_CUDA_GRAPHS=0
+
 cd /llama.cpp
-LD_LIBRARY_PATH=/xsched/output/lib:$LD_LIBRARY_PATH XSCHED_POLICY=HPF ./build/bin/llama-server -m /models/DeepSeek-R1-0528-Qwen3-8B-Q8_0.gguf -ngl 99 -c 4096 -np 2
+./build/bin/llama-server -m /models/DeepSeek-R1-0528-Qwen3-8B-Q8_0.gguf -ngl 99 -c 4096 -np 2
 ```
 
-Use the script to chat with the server.
+Test priority scheduling and preemption effects with the provided script.
 
 ```bash
-# normal priority
-./llama.cpp/tools/server/chat.sh 0 
-# higher priority
-./llama.cpp/tools/server/chat.sh 1 
+# In a separate terminal, run the test script after starting the server
+./test_llamacpp.sh
 ```
+
+The test script demonstrates multi-task concurrency and preemption scheduling:
+1. Task A runs alone as baseline
+2. Task A and Task B run concurrently with same priority
+3. Task A (high priority) preempts Task B (normal priority)
+
+Results show latency improvements for high-priority tasks through preemptive scheduling.
