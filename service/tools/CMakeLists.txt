@@ -1,2 +1,3 @@
 add_subdirectory(x11_monitor)
 add_subdirectory(x11_launcher)
+add_subdirectory(change_policy)
